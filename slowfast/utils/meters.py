@@ -485,18 +485,18 @@ class TestGazeMeter(object):
         self.labels_hm = list()
         self.labels = list()
 
-    def update_stats(self, f1, recall, precision, auc, preds, labels_hm, labels):
-        labels_flat = labels.view(labels.size(0) * labels.size(1), -1)
-        mb_size = torch.where(labels_flat[:, 2] == 1)[0].size(0)
-        self.num_samples += mb_size
-        self.f1.append(f1 * mb_size)
-        self.recall.append(recall * mb_size)
-        self.precision.append(precision * mb_size)
-        self.auc.append(auc * mb_size)
+    def update_stats(self, preds, labels_hm):
+        # labels_flat = labels.view(labels.size(0) * labels.size(1), -1)
+        # mb_size = torch.where(labels_flat[:, 2] == 1)[0].size(0)
+        self.num_samples += 1#mb_size
+        # self.f1.append(f1 * mb_size)
+        # self.recall.append(recall * mb_size)
+        # self.precision.append(precision * mb_size)
+        # self.auc.append(auc * mb_size)
 
         self.preds.append(preds)
         self.labels_hm.append(labels_hm)
-        self.labels.append(labels)
+        # self.labels.append(labels)
 
     def log_iter_stats(self, cur_iter):
         """
@@ -535,17 +535,17 @@ class TestGazeMeter(object):
     def finalize_metrics(self):
         preds = torch.cat(self.preds, dim=0)
         labels_hm = torch.cat(self.labels_hm, dim=0)
-        labels = torch.cat(self.labels, dim=0)
-        f1, recall, precision, threshold = metrics.adaptive_f1(preds, labels_hm, labels, dataset=self.dataset)
-        auc = metrics.auc(preds, labels_hm, labels, dataset=self.dataset)
+        # labels = torch.cat(self.labels, dim=0)
+        # f1, recall, precision, threshold = metrics.adaptive_f1(preds, labels_hm, labels, dataset=self.dataset)
+        # auc = metrics.auc(preds, labels_hm, labels, dataset=self.dataset)
 
         self.stats = {
             "split": "test_final",
-            "recall": recall,
-            "precision": precision,
-            "f1": f1,
-            "auc": auc,
-            "threshold": threshold
+            # "recall": recall,
+            # "precision": precision,
+            # "f1": f1,
+            # "auc": auc,
+            # "threshold": threshold
         }
 
         logging.log_json_stats(self.stats)

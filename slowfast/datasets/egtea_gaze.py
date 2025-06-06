@@ -83,7 +83,7 @@ class Egteagaze(torch.utils.data.Dataset):
         if self.mode == 'train':
             path_to_file = 'data/train_gaze_official.csv'
         elif self.mode in ['val', 'test']:
-            path_to_file = 'data/test_gaze_official.csv'
+            path_to_file = 'data/demo_lerobot_gaze.csv'
         else:
             raise ValueError(f"Dont't support mode {self.mode}.")
 

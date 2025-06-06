@@ -41,14 +41,12 @@ TRAIN.CHECKPOINT_FILE_PATH path_to_your_PyTorch_checkpoint
 We have `TRAIN.ENABLE` and `TEST.ENABLE` to control whether training or testing is required for the current job. If only testing is preferred, you can set the `TRAIN.ENABLE` to False, and do not forget to pass the path to the model you want to test to `TEST.CHECKPOINT_FILE_PATH`.
 
 ```
-CUDA_VISIBLE_DEVICES=4 python tools/run_net.py \
- --cfg configs/Ego4d/MVIT_B_16x4_CONV.yaml \
- TRAIN.ENABLE False \
- TEST.BATCH_SIZE 32 \
- NUM_GPUS 1 \
- OUTPUT_DIR checkpoints/GLC \
- TEST.CHECKPOINT_FILE_PATH /path/to/checkpoint \
- DATA.PATH_PREFIX /data/Ego4D/clips.gaze (set as your own path)
+python tools/run_net.py  --cfg configs/Ego4d/MVIT_B_16x4_CONV.yaml  TRAIN.ENABLE False  TEST.BATCH_SIZE 32  NUM_GPUS 1  OUTPUT_DIR checkpoints/GLC  TEST.CHECKPOINT_FILE_PATH checkpoints/GLC/checkpoints/MViT_Ego4D_ckpt.pyth DATA.PATH_PREFIX ""
+
+# or
+
+python tools/annotate_lerobot_dataset.py --repo-id villekuosmanen/spread_snackbar_box_flaps --cfg configs/Ego4d/MVIT_B_16x4_CONV.yaml  TRAIN.ENABLE False  TEST.BATCH_SIZE 32  NUM_GPUS 1  OUTPUT_DIR checkpoints/GLC  TEST.CHECKPOINT_FILE_PATH checkpoints/GLC/checkpoints/MViT_Ego4D_ckpt.pyth DATA.PATH_PREFIX ""
+
 ```
 
 You can also set `DATA.PATH_PREFIX` in configs directly.

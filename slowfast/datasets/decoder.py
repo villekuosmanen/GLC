@@ -295,7 +295,7 @@ def pyav_decode(
             stream_name={"video": 0}
         )
         container.close()
-        frames_idx = torch.tensor([frame.index for frame in video_frames])
+        frames_idx = torch.tensor(list(range(len(video_frames))))
 
         frames = [frame.to_rgb().to_ndarray() for frame in video_frames]
         frames = torch.as_tensor(np.stack(frames))

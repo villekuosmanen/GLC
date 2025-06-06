@@ -59,6 +59,13 @@ def parse_args():
         default=None,
         nargs=argparse.REMAINDER,
     )
+    parser.add_argument(
+        "--repo-id",
+        type=str,
+        default=None,
+        help="Name of hugging face repositery containing a LeRobotDataset dataset (e.g. `lerobot/pusht` for https://huggingface.co/datasets/lerobot/pusht).",
+    )
+
     if len(sys.argv) == 1:
         parser.print_help()
     return parser.parse_args()

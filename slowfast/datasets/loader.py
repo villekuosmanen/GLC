@@ -80,7 +80,7 @@ def detection_collate(batch):
     return inputs, labels, video_idx, collated_extra_data
 
 
-def construct_loader(cfg, split, is_precise_bn=False):
+def construct_loader(cfg, split, is_precise_bn=False, video_files=None):
     """
     Constructs the data loader for the given dataset.
     Args:
@@ -113,7 +113,7 @@ def construct_loader(cfg, split, is_precise_bn=False):
         drop_last = False
 
     # Construct the dataset
-    dataset = build_dataset(dataset_name, cfg, split)
+    dataset = build_dataset(dataset_name, cfg, split, video_files)
 
     if isinstance(dataset, torch.utils.data.IterableDataset):
         loader = torch.utils.data.DataLoader(

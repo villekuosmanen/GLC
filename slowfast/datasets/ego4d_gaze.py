@@ -36,7 +36,7 @@ class Ego4dgaze(torch.utils.data.Dataset):
     video with uniform cropping.
     """
 
-    def __init__(self, cfg, mode, num_retries=10):
+    def __init__(self, cfg, mode, video_files=None, num_retries=10):
         """
         Construct the EGO4D video loader with a given csv file.
         Args:
@@ -52,6 +52,8 @@ class Ego4dgaze(torch.utils.data.Dataset):
         assert mode in ["train", "val", "test"], "Split '{}' not supported for Ego4dGaze".format(mode)
         self.mode = mode
         self.cfg = cfg
+        self.video_files = video_files
+        print(self.video_files)
 
         self._video_meta = {}
         self._num_retries = num_retries
@@ -83,7 +85,7 @@ class Ego4dgaze(torch.utils.data.Dataset):
         if self.mode == 'train':
             path_to_file = 'data/train_ego4d_gaze.csv'
         elif self.mode == 'val' or self.mode == 'test':
-            path_to_file = 'data/test_ego4d_gaze.csv'
+            path_to_file = 'data/demo_lerobot_gaze.csv'
         else:
             raise ValueError(f"Don't support mode {self.mode}.")
 
@@ -92,27 +94,34 @@ class Ego4dgaze(torch.utils.data.Dataset):
         self._path_to_videos = []
         self._labels = dict()
         self._spatial_temporal_idx = []
-        with pathmgr.open(path_to_file, "r") as f:
-            paths = [item for item in f.read().splitlines()]
-            for clip_idx, path in enumerate(paths):
+        if self.video_files is not None:
+            self._path_to_videos = self.video_files
+            for clip_idx, path in enumerate(self._path_to_videos):
                 for idx in range(self._num_clips):
-                    self._path_to_videos.append(os.path.join(self.cfg.DATA.PATH_PREFIX, path))
-                    self._spatial_temporal_idx.append(idx)  # used in test
-                    self._video_meta[clip_idx * self._num_clips + idx] = {}  # only used in torchvision backend
+                    self._spatial_temporal_idx.append(idx)
+                    self._video_meta[clip_idx * self._num_clips + idx] = {}
+        else:
+            with pathmgr.open(path_to_file, "r") as f:
+                paths = [item for item in f.read().splitlines()]
+                for clip_idx, path in enumerate(paths):
+                    for idx in range(self._num_clips):
+                        self._path_to_videos.append(os.path.join(self.cfg.DATA.PATH_PREFIX, path))
+                        self._spatial_temporal_idx.append(idx)  # used in test
+                        self._video_meta[clip_idx * self._num_clips + idx] = {}  # only used in torchvision backend
         assert (len(self._path_to_videos) > 0), "Failed to load Ego4dgaze split {} from {}".format(self._split_idx, path_to_file)
 
         # Read gaze label
-        logger.info('Loading Gaze Labels...')
-        for path in tqdm(self._path_to_videos):
-            video_name = path.split('/')[-2]
-            if video_name in self._labels.keys():
-                pass
-            else:
-                label_name = video_name + '_frame_label.csv'
-                prefix = os.path.dirname(self.cfg.DATA.PATH_PREFIX)
-                with open(os.path.join(f'{prefix}/gaze_frame_label', label_name), 'r') as f:
-                    rows = [list(map(float, row)) for i, row in enumerate(csv.reader(f)) if i > 0]
-                self._labels[video_name] = np.array(rows)[:, 1:]  # [x, y, type,] in line with egtea format
+        # logger.info('Loading Gaze Labels...')
+        # for path in tqdm(self._path_to_videos):
+        #     video_name = path.split('/')[-2]
+        #     if video_name in self._labels.keys():
+        #         pass
+        #     else:
+        #         label_name = video_name + '_frame_label.csv'
+        #         prefix = os.path.dirname(self.cfg.DATA.PATH_PREFIX)
+        #         with open(os.path.join(f'{prefix}/gaze_frame_label', label_name), 'r') as f:
+        #             rows = [list(map(float, row)) for i, row in enumerate(csv.reader(f)) if i > 0]
+        #         self._labels[video_name] = np.array(rows)[:, 1:]  # [x, y, type,] in line with egtea format
 
         logger.info("Constructing Ego4D dataloader (size: {}) from {}".format(len(self._path_to_videos), path_to_file))
 
@@ -168,7 +177,8 @@ class Ego4dgaze(torch.utils.data.Dataset):
         else:
             raise NotImplementedError("Does not support {} mode".format(self.mode))
 
-        sampling_rate = utils.get_random_sampling_rate(self.cfg.MULTIGRID.LONG_CYCLE_SAMPLING_RATE, self.cfg.DATA.SAMPLING_RATE)
+        sampling_rate = int((5 * 20) / 9) # clip_length * fps / ( 8 + 1 segments)
+        # sampling_rate = utils.get_random_sampling_rate(self.cfg.MULTIGRID.LONG_CYCLE_SAMPLING_RATE, self.cfg.DATA.SAMPLING_RATE)
         # = 8
 
         # Try to decode and sample a clip from a video. If the video can not be
@@ -200,7 +210,7 @@ class Ego4dgaze(torch.utils.data.Dataset):
                 clip_idx=temporal_sample_index,
                 num_clips=self.cfg.TEST.NUM_ENSEMBLE_VIEWS,
                 video_meta=self._video_meta[index],
-                target_fps=self.cfg.DATA.TARGET_FPS,
+                target_fps=20,
                 backend=self.cfg.DATA.DECODING_BACKEND,
                 max_spatial_scale=min_scale,  # only used in torchvision backend
                 use_offset=self.cfg.DATA.USE_OFFSET_SAMPLING,
@@ -212,13 +222,13 @@ class Ego4dgaze(torch.utils.data.Dataset):
             video_name, clip_name = video_path.split('/')[-2:]
             clip_tstart, clip_tend = clip_name[:-4].split('_')[-2:]  # get start and end time
             clip_tstart, clip_tend = int(clip_tstart[1:]), int(clip_tend[1:])  # remove 't'
-            clip_fstart, clip_fend = clip_tstart * self.cfg.DATA.TARGET_FPS, clip_tend * self.cfg.DATA.TARGET_FPS
-            frames_global_idx = frames_idx.numpy() + clip_fstart - 1
-            if self.mode not in ['test'] and frames_global_idx[-1] >= self._labels[video_name].shape[0]:  # Some frames don't have labels. Try to use another one
-                # logger.info('No annotations:', video_name, clip_name)
-                index = random.randint(0, len(self._path_to_videos) - 1)
-                continue
-            label = self._labels[video_name][frames_global_idx, :]
+            clip_fstart, clip_fend = clip_tstart * 20, clip_tend * 20
+            frames_global_idx = frames_idx.numpy() + clip_fstart
+            # if self.mode not in ['test'] and frames_global_idx[-1] >= self._labels[video_name].shape[0]:  # Some frames don't have labels. Try to use another one
+            #     # logger.info('No annotations:', video_name, clip_name)
+            #     index = random.randint(0, len(self._path_to_videos) - 1)
+            #     continue
+            # label = self._labels[video_name][frames_global_idx, :]
 
             # If decoding failed (wrong format, video is too short, and etc),
             # select another video.
@@ -229,54 +239,54 @@ class Ego4dgaze(torch.utils.data.Dataset):
                     index = random.randint(0, len(self._path_to_videos) - 1)
                 continue
 
-            if self.aug:
-                if self.cfg.AUG.NUM_SAMPLE > 1:
+            # if self.aug:
+            #     if self.cfg.AUG.NUM_SAMPLE > 1:
 
-                    frame_list = []
-                    label_list = []
-                    index_list = []
-                    for _ in range(self.cfg.AUG.NUM_SAMPLE):
-                        new_frames = self._aug_frame(frames, spatial_sample_index, min_scale, max_scale, crop_size)
-                        label = self._labels[index]
-                        new_frames = utils.pack_pathway_output(self.cfg, new_frames)
-                        frame_list.append(new_frames)
-                        label_list.append(label)
-                        index_list.append(index)
-                    return frame_list, label_list, index_list, {}
+            #         frame_list = []
+            #         label_list = []
+            #         index_list = []
+            #         for _ in range(self.cfg.AUG.NUM_SAMPLE):
+            #             new_frames = self._aug_frame(frames, spatial_sample_index, min_scale, max_scale, crop_size)
+            #             label = self._labels[index]
+            #             new_frames = utils.pack_pathway_output(self.cfg, new_frames)
+            #             frame_list.append(new_frames)
+            #             label_list.append(label)
+            #             index_list.append(index)
+            #         return frame_list, label_list, index_list, {}
 
-                else:
-                    frames = self._aug_frame(frames, spatial_sample_index, min_scale, max_scale, crop_size)
+            #     else:
+            #         frames = self._aug_frame(frames, spatial_sample_index, min_scale, max_scale, crop_size)
 
-            else:
-                frames = utils.tensor_normalize(frames, self.cfg.DATA.MEAN, self.cfg.DATA.STD)
-                # T H W C -> C T H W.
-                frames = frames.permute(3, 0, 1, 2)
-                # Perform data augmentation.
-                frames, label = utils.spatial_sampling(
-                    frames,
-                    gaze_loc=label,
-                    spatial_idx=spatial_sample_index,
-                    min_scale=min_scale,
-                    max_scale=max_scale,
-                    crop_size=crop_size,
-                    random_horizontal_flip=self.cfg.DATA.RANDOM_FLIP,
-                    inverse_uniform_sampling=self.cfg.DATA.INV_UNIFORM_SAMPLE,
-                )
+            # else:
+            frames = utils.tensor_normalize(frames, self.cfg.DATA.MEAN, self.cfg.DATA.STD)
+            # T H W C -> C T H W.
+            frames = frames.permute(3, 0, 1, 2)
+            # Perform data augmentation.
+            frames = utils.spatial_sampling(
+                frames,
+                # gaze_loc=label,
+                spatial_idx=spatial_sample_index,
+                min_scale=min_scale,
+                max_scale=max_scale,
+                crop_size=crop_size,
+                random_horizontal_flip=self.cfg.DATA.RANDOM_FLIP,
+                inverse_uniform_sampling=self.cfg.DATA.INV_UNIFORM_SAMPLE,
+            )
 
             frames = utils.pack_pathway_output(self.cfg, frames)
 
             label_hm = np.zeros(shape=(frames[0].size(1), frames[0].size(2) // 4, frames[0].size(3) // 4))
-            for i in range(label_hm.shape[0]):
-                self._get_gaussian_map(label_hm[i, :, :], center=(label[i, 0] * label_hm.shape[2], label[i, 1] * label_hm.shape[1]),
-                                       kernel_size=self.cfg.DATA.GAUSSIAN_KERNEL, sigma=-1)  # sigma=-1 means use default sigma
-                d_sum = label_hm[i, :, :].sum()
-                if d_sum == 0:  # gaze may be outside the image
-                    label_hm[i, :, :] = label_hm[i, :, :] + 1 / (label_hm.shape[1] * label_hm.shape[2])
-                elif d_sum != 1:  # gaze may be right at the edge of image
-                    label_hm[i, :, :] = label_hm[i, :, :] / d_sum
+            # for i in range(label_hm.shape[0]):
+            #     self._get_gaussian_map(label_hm[i, :, :], center=(label[i, 0] * label_hm.shape[2], label[i, 1] * label_hm.shape[1]),
+            #                            kernel_size=self.cfg.DATA.GAUSSIAN_KERNEL, sigma=-1)  # sigma=-1 means use default sigma
+            #     d_sum = label_hm[i, :, :].sum()
+            #     if d_sum == 0:  # gaze may be outside the image
+            #         label_hm[i, :, :] = label_hm[i, :, :] + 1 / (label_hm.shape[1] * label_hm.shape[2])
+            #     elif d_sum != 1:  # gaze may be right at the edge of image
+            #         label_hm[i, :, :] = label_hm[i, :, :] / d_sum
 
-            label_hm = torch.as_tensor(label_hm).float()
-            return frames, label, label_hm, index, {'path': self._path_to_videos[index], 'index': np.array(frames_global_idx)}
+            # label_hm = torch.as_tensor(label_hm).float()
+            return frames, label_hm, index, {'path': self._path_to_videos[index], 'index': np.array(frames_global_idx)}
         else:
             raise RuntimeError("Failed to fetch video after {} retries.".format(self._num_retries))
 
